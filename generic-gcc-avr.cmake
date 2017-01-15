@@ -34,13 +34,33 @@
 option(WITH_MCU "Add the mCU type to the target file name." ON)
 
 ##########################################################################
-# executables in use
+# find cross-compile ROOT_PATH
 ##########################################################################
-find_program(AVR_CC avr-gcc)
-find_program(AVR_CXX avr-g++)
-find_program(AVR_OBJCOPY avr-objcopy)
-find_program(AVR_SIZE_TOOL avr-size)
-find_program(AVR_OBJDUMP avr-objdump)
+foreach(dir
+    $ENV{AVR_FIND_ROOT_PATH}
+    "/opt/local/avr"
+    "/usr/avr"
+    "/usr/lib/avr"
+)
+  if (EXISTS ${dir})
+    set(CMAKE_FIND_ROOT_PATH ${dir})
+    break()
+  endif()
+endforeach(dir)
+message(STATUS "Set CMAKE_FIND_ROOT_PATH to ${CMAKE_FIND_ROOT_PATH}")
+
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM BOTH)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+
+##########################################################################
+# find executables
+##########################################################################
+find_program(AVR_CC NAMES avr-gcc gcc)
+find_program(AVR_CXX NAMES avr-g++ g++)
+find_program(AVR_OBJCOPY NAMES avr-objcopy objcopy)
+find_program(AVR_SIZE_TOOL NAMES avr-size)
+find_program(AVR_OBJDUMP NAMES avr-objdump objdump)
 
 ##########################################################################
 # toolchain starts with defining mandatory variables
@@ -60,47 +80,17 @@ set(CMAKE_CXX_COMPILER ${AVR_CXX})
 # - AVR_SIZE_ARGS
 ##########################################################################
 
-# default upload tool
-if(NOT AVR_UPLOADTOOL)
-   set(
-      AVR_UPLOADTOOL avrdude
-      CACHE STRING "Set default upload tool: avrdude"
-   )
-   find_program(AVR_UPLOADTOOL avrdude)
-endif(NOT AVR_UPLOADTOOL)
+find_program(AVR_UPLOADTOOL avrdude)
+set(AVR_UPLOADTOOL_PORT "" CACHE STRING "Set default upload tool port: usb")
+set(AVR_PROGRAMMER avrispmkII CACHE STRING "Set default programmer hardware model: avrispmkII")
 
-# default upload tool port
-if(NOT AVR_UPLOADTOOL_PORT)
-   set(
-      AVR_UPLOADTOOL_PORT usb
-      CACHE STRING "Set default upload tool port: usb"
-   )
-endif(NOT AVR_UPLOADTOOL_PORT)
+set(AVR_MCU atmega8 CACHE STRING "Set default MCU: atmega8 (see 'avr-gcc --target-help' for valid values)")
 
-# default programmer (hardware)
-if(NOT AVR_PROGRAMMER)
-   set(
-      AVR_PROGRAMMER avrispmkII
-      CACHE STRING "Set default programmer hardware model: avrispmkII"
-   )
-endif(NOT AVR_PROGRAMMER)
-
-# default MCU (chip)
-if(NOT AVR_MCU)
-   set(
-      AVR_MCU atmega8
-      CACHE STRING "Set default MCU: atmega8 (see 'avr-gcc --target-help' for valid values)"
-   )
-endif(NOT AVR_MCU)
-
-#default avr-size args
-if(NOT AVR_SIZE_ARGS)
-   if(APPLE)
-      set(AVR_SIZE_ARGS -B)
-   else(APPLE)
-      set(AVR_SIZE_ARGS -C;--mcu=${AVR_MCU})
-   endif(APPLE)
-endif(NOT AVR_SIZE_ARGS)
+if(APPLE)
+  set(AVR_SIZE_ARGS -B)
+else(APPLE)
+  set(AVR_SIZE_ARGS -C;--mcu=${AVR_MCU})
+endif(APPLE)
 
 ##########################################################################
 # check build types:
@@ -120,10 +110,7 @@ if(NOT ((CMAKE_BUILD_TYPE MATCHES Release) OR
       CACHE STRING "Choose cmake build type: Debug Release RelWithDebInfo MinSizeRel"
       FORCE
    )
-endif(NOT ((CMAKE_BUILD_TYPE MATCHES Release) OR
-           (CMAKE_BUILD_TYPE MATCHES RelWithDebInfo) OR
-           (CMAKE_BUILD_TYPE MATCHES Debug) OR
-           (CMAKE_BUILD_TYPE MATCHES MinSizeRel)))
+endif()
 
 ##########################################################################
 
@@ -150,6 +137,10 @@ function(add_avr_executable EXECUTABLE_NAME)
       message(FATAL_ERROR "No source files given for ${EXECUTABLE_NAME}.")
    endif(NOT ARGN)
 
+   if(AVR_UPLOADTOOL_PORT)
+     set(AVR_UPLOADTOOL_PORT_ARGS "-P ${AVR_UPLOADTOOL_PORT}")
+   endif()
+   
    # set file names
    set(elf_file ${EXECUTABLE_NAME}${MCU_TYPE_FOR_FILENAME}.elf)
    set(hex_file ${EXECUTABLE_NAME}${MCU_TYPE_FOR_FILENAME}.hex)
@@ -159,11 +150,13 @@ function(add_avr_executable EXECUTABLE_NAME)
    # elf file
    add_executable(${elf_file} EXCLUDE_FROM_ALL ${ARGN})
 
-   set_target_properties(
-      ${elf_file}
+   set_target_properties(${elf_file}
       PROPERTIES
-         COMPILE_FLAGS "-mmcu=${AVR_MCU}"
+         COMPILE_FLAGS "-mmcu=${AVR_MCU} -fpack-struct -fshort-enums"
          LINK_FLAGS "-mmcu=${AVR_MCU} -Wl,--gc-sections -mrelax -Wl,-Map,${map_file}"
+   )
+   target_compile_definitions(${elf_file} PRIVATE
+      -DF_CPU=${MCU_SPEED}
    )
 
    add_custom_command(
@@ -209,7 +202,7 @@ function(add_avr_executable EXECUTABLE_NAME)
       upload_${EXECUTABLE_NAME}
       ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_OPTIONS}
          -U flash:w:${hex_file}
-         -P ${AVR_UPLOADTOOL_PORT}
+         ${AVR_UPLOADTOOL_PORT_ARGS}
       DEPENDS ${hex_file}
       COMMENT "Uploading ${hex_file} to ${AVR_MCU} using ${AVR_PROGRAMMER}"
    )
@@ -220,7 +213,7 @@ function(add_avr_executable EXECUTABLE_NAME)
       upload_eeprom
       ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_OPTIONS}
          -U eeprom:w:${eeprom_image}
-         -P ${AVR_UPLOADTOOL_PORT}
+         ${AVR_UPLOADTOOL_PORT_ARGS}
       DEPENDS ${eeprom_image}
       COMMENT "Uploading ${eeprom_image} to ${AVR_MCU} using ${AVR_PROGRAMMER}"
    )
@@ -228,14 +221,14 @@ function(add_avr_executable EXECUTABLE_NAME)
    # get status
    add_custom_target(
       get_status
-      ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} -P ${AVR_UPLOADTOOL_PORT} -n -v
+      ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_PORT_ARGS} -n -v
       COMMENT "Get status from ${AVR_MCU}"
    )
 
    # get fuses
    add_custom_target(
       get_fuses
-      ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} -P ${AVR_UPLOADTOOL_PORT} -n
+      ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_PORT_ARGS} -n
          -U lfuse:r:-:b
          -U hfuse:r:-:b
       COMMENT "Get fuses from ${AVR_MCU}"
@@ -244,7 +237,7 @@ function(add_avr_executable EXECUTABLE_NAME)
    # set fuses
    add_custom_target(
       set_fuses
-      ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} -P ${AVR_UPLOADTOOL_PORT}
+      ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_PORT_ARGS}
          -U lfuse:w:${AVR_L_FUSE}:m
          -U hfuse:w:${AVR_H_FUSE}:m
          COMMENT "Setup: High Fuse: ${AVR_H_FUSE} Low Fuse: ${AVR_L_FUSE}"
@@ -253,7 +246,7 @@ function(add_avr_executable EXECUTABLE_NAME)
    # get oscillator calibration
    add_custom_target(
       get_calibration
-         ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} -P ${AVR_UPLOADTOOL_PORT}
+         ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_PORT_ARGS}
          -U calibration:r:${AVR_MCU}_calib.tmp:r
          COMMENT "Write calibration status of internal oscillator to ${AVR_MCU}_calib.tmp."
    )
@@ -261,7 +254,7 @@ function(add_avr_executable EXECUTABLE_NAME)
    # set oscillator calibration
    add_custom_target(
       set_calibration
-      ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} -P ${AVR_UPLOADTOOL_PORT}
+      ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_PORT_ARGS}
          -U calibration:w:${AVR_MCU}_calib.hex
          COMMENT "Program calibration status of internal oscillator from ${AVR_MCU}_calib.hex."
    )
