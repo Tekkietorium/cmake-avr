@@ -33,7 +33,7 @@ set(CMAKE_C_STANDARD 11)
 ##########################################################################
 # options
 ##########################################################################
-option(WITH_MCU "Add the mCU type to the target file name." ON)
+option(WITH_MCU "Add the mcu type to the target file name." ON)
 
 ##########################################################################
 # find cross-compile ROOT_PATH
@@ -87,6 +87,7 @@ set(AVR_UPLOADTOOL_PORT "" CACHE STRING "Set default upload tool port: usb")
 set(AVR_PROGRAMMER avrispmkII CACHE STRING "Set default programmer hardware model: avrispmkII")
 
 set(AVR_MCU atmega8 CACHE STRING "Set default MCU: atmega8 (see 'avr-gcc --target-help' for valid values)")
+set(MCU_SPEED 1000000UL CACHE STRING "MCU clock rate")
 
 if(APPLE)
   set(AVR_SIZE_ARGS -B)
