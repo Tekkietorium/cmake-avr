@@ -27,6 +27,8 @@
 # AVR_PROGRAMMER (default: avrispmkII)
 #     the programmer hardware used, e.g. avrispmkII
 ##########################################################################
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_C_STANDARD 11)
 
 ##########################################################################
 # options
