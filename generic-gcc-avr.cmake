@@ -238,6 +238,7 @@ function(add_avr_executable EXECUTABLE_NAME)
    )
 
    # set fuses
+if(AVR_E_FUSE OR AVR_H_FUSE OR AVR_L_FUSE)
    add_custom_target(
       set_fuses
       ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_PORT_ARGS}
@@ -245,6 +246,25 @@ function(add_avr_executable EXECUTABLE_NAME)
          -U hfuse:w:${AVR_H_FUSE}:m
          COMMENT "Setup: High Fuse: ${AVR_H_FUSE} Low Fuse: ${AVR_L_FUSE}"
    )
+else()
+   set(fuses_file ${EXECUTABLE_NAME}${MCU_TYPE_FOR_FILENAME}.fuses.hex)
+   set(lfuse_file ${EXECUTABLE_NAME}${MCU_TYPE_FOR_FILENAME}.lfuse.hex)
+   set(hfuse_file ${EXECUTABLE_NAME}${MCU_TYPE_FOR_FILENAME}.hfuse.hex)
+   set(efuse_file ${EXECUTABLE_NAME}${MCU_TYPE_FOR_FILENAME}.efuse.hex)
+   add_custom_target(
+      set_fuses
+      COMMAND avr-objcopy -j .fuse -O ihex ${elf_file} ${fuses_file} --change-section-lma .fuse=0
+      COMMAND srec_cat ${fuses_file} -Intel -crop 0x00 0x01 -offset  0x00 -O ${lfuse_file} -Intel
+      COMMAND srec_cat ${fuses_file} -Intel -crop 0x01 0x02 -offset -0x01 -O ${hfuse_file} -Intel
+      COMMAND srec_cat ${fuses_file} -Intel -crop 0x02 0x03 -offset -0x02 -O ${efuse_file} -Intel
+      COMMAND ${AVR_UPLOADTOOL} -p ${AVR_MCU} -c ${AVR_PROGRAMMER} ${AVR_UPLOADTOOL_PORT_ARGS}
+         -U lfuse:w:${lfuse_file}:i
+         -U hfuse:w:${hfuse_file}:i
+         -U efuse:w:${efuse_file}:i
+      DEPENDS ${elf_file}
+      COMMENT "Setup FUSES"
+   )
+endif()
 
    # get oscillator calibration
    add_custom_target(
