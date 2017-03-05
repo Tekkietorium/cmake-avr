@@ -292,6 +292,9 @@ function(add_avr_library LIBRARY_NAME)
          COMPILE_FLAGS "-mmcu=${AVR_MCU}"
          OUTPUT_NAME "${lib_file}"
    )
+   target_compile_definitions(${lib_file} PRIVATE
+      -DF_CPU=${MCU_SPEED}
+   )
 
    if(NOT TARGET ${LIBRARY_NAME})
       add_custom_target(
