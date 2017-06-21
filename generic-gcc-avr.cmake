@@ -361,3 +361,5 @@ function(avr_target_link_libraries EXECUTABLE_TARGET)
 
    target_link_libraries(${TARGET_LIST} ${NON_TARGET_LIST})
 endfunction(avr_target_link_libraries EXECUTABLE_TARGET)
+
+include_directories(SYSTEM "${CMAKE_CURRENT_LIST_DIR}")
