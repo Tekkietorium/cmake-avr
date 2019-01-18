@@ -126,6 +126,9 @@ else(WITH_MCU)
    set(MCU_TYPE_FOR_FILENAME "")
 endif(WITH_MCU)
 
+add_compile_options(-mmcu=${AVR_MCU} -fpack-struct -fshort-enums)
+add_definitions(-DF_CPU=${MCU_SPEED})
+
 ##########################################################################
 # add_avr_executable
 # - IN_VAR: EXECUTABLE_NAME
@@ -151,15 +154,12 @@ function(add_avr_executable EXECUTABLE_NAME)
    set(eeprom_image ${EXECUTABLE_NAME}${MCU_TYPE_FOR_FILENAME}-eeprom.hex)
 
    # elf file
-   add_executable(${elf_file} EXCLUDE_FROM_ALL ${ARGN})
+   add_executable(${EXECUTABLE_NAME} ${ARGN})
 
-   set_target_properties(${elf_file}
+   set_target_properties(${EXECUTABLE_NAME}
       PROPERTIES
-         COMPILE_FLAGS "-mmcu=${AVR_MCU} -fpack-struct -fshort-enums"
-         LINK_FLAGS "-mmcu=${AVR_MCU} -Wl,--gc-sections -mrelax -Wl,-Map,${map_file}"
-   )
-   target_compile_definitions(${elf_file} PRIVATE
-      -DF_CPU=${MCU_SPEED}
+      OUTPUT_NAME ${elf_file}
+      LINK_FLAGS "-mmcu=${AVR_MCU} -Wl,--gc-sections -mrelax -Wl,-Map,${map_file}"
    )
 
    add_custom_command(
@@ -168,7 +168,7 @@ function(add_avr_executable EXECUTABLE_NAME)
          ${AVR_OBJCOPY} -j .text -j .data -O ihex ${elf_file} ${hex_file}
       COMMAND
          ${AVR_SIZE_TOOL} ${AVR_SIZE_ARGS} ${elf_file}
-      DEPENDS ${elf_file}
+      DEPENDS ${EXECUTABLE_NAME}
    )
 
    # eeprom
@@ -178,19 +178,7 @@ function(add_avr_executable EXECUTABLE_NAME)
          ${AVR_OBJCOPY} -j .eeprom --set-section-flags=.eeprom=alloc,load
             --change-section-lma .eeprom=0 --no-change-warnings
             -O ihex ${elf_file} ${eeprom_image}
-      DEPENDS ${elf_file}
-   )
-
-   add_custom_target(
-      ${EXECUTABLE_NAME}
-      ALL
-      DEPENDS ${hex_file} ${eeprom_image}
-   )
-
-   set_target_properties(
-      ${EXECUTABLE_NAME}
-      PROPERTIES
-         OUTPUT_NAME "${elf_file}"
+      DEPENDS ${EXECUTABLE_NAME}
    )
 
    # clean
@@ -261,7 +249,7 @@ else()
          -U lfuse:w:${lfuse_file}:i
          -U hfuse:w:${hfuse_file}:i
          -U efuse:w:${efuse_file}:i
-      DEPENDS ${elf_file}
+      DEPENDS ${EXECUTABLE_NAME}
       COMMENT "Setup FUSES"
    )
 endif()
@@ -286,7 +274,7 @@ endif()
    add_custom_target(
       disassemble_${EXECUTABLE_NAME}
       ${AVR_OBJDUMP} -h -S ${elf_file} > ${EXECUTABLE_NAME}.lst
-      DEPENDS ${elf_file}
+      DEPENDS ${EXECUTABLE_NAME}
    )
 
 endfunction(add_avr_executable)
@@ -305,61 +293,25 @@ function(add_avr_library LIBRARY_NAME)
       message(FATAL_ERROR "No source files given for ${LIBRARY_NAME}.")
    endif(NOT ARGN)
 
-   set(lib_file ${LIBRARY_NAME}${MCU_TYPE_FOR_FILENAME})
+   add_library(${LIBRARY_NAME} STATIC ${ARGN})
 
-   add_library(${lib_file} STATIC ${ARGN})
-
-   set_target_properties(
-      ${lib_file}
-      PROPERTIES
-         COMPILE_FLAGS "-mmcu=${AVR_MCU}"
-         OUTPUT_NAME "${lib_file}"
+   set_target_properties(${LIBRARY_NAME}
+      PROPERTIES OUTPUT_NAME ${LIBRARY_NAME}${MCU_TYPE_FOR_FILENAME}
    )
-   target_compile_definitions(${lib_file} PRIVATE
-      -DF_CPU=${MCU_SPEED}
-   )
-
-   if(NOT TARGET ${LIBRARY_NAME})
-      add_custom_target(
-         ${LIBRARY_NAME}
-         ALL
-         DEPENDS ${lib_file}
-      )
-
-      set_target_properties(
-         ${LIBRARY_NAME}
-         PROPERTIES
-            OUTPUT_NAME "${lib_file}"
-      )
-   endif(NOT TARGET ${LIBRARY_NAME})
-
 endfunction(add_avr_library)
 
-##########################################################################
-# avr_target_link_libraries
-# - IN_VAR: EXECUTABLE_TARGET
-# - ARGN  : targets and files to link to
-#
-# Calls target_link_libraries with AVR target names (concatenation,
-# extensions and so on.
-##########################################################################
-function(avr_target_link_libraries EXECUTABLE_TARGET)
-   if(NOT ARGN)
-      message(FATAL_ERROR "Nothing to link to ${EXECUTABLE_TARGET}.")
-   endif(NOT ARGN)
+set(ARDUINO_DIR /opt/arduino/hardware/arduino/avr)
+function(add_arduino_library LIBRARY_NAME)
+   file(GLOB_RECURSE SOURCES ${ARDUINO_DIR}/libraries/${LIBRARY_NAME}/src/*.c*)
 
-   get_target_property(TARGET_LIST ${EXECUTABLE_TARGET} OUTPUT_NAME)
-
-   foreach(TGT ${ARGN})
-      if(TARGET ${TGT})
-         get_target_property(ARG_NAME ${TGT} OUTPUT_NAME)
-         list(APPEND TARGET_LIST ${ARG_NAME})
-      else(TARGET ${TGT})
-         list(APPEND NON_TARGET_LIST ${TGT})
-      endif(TARGET ${TGT})
-   endforeach(TGT ${ARGN})
-
-   target_link_libraries(${TARGET_LIST} ${NON_TARGET_LIST})
-endfunction(avr_target_link_libraries EXECUTABLE_TARGET)
+   add_library(${LIBRARY_NAME} STATIC ${SOURCES})
+   set_target_properties(${LIBRARY_NAME}
+      PROPERTIES OUTPUT_NAME ${LIBRARY_NAME}${MCU_TYPE_FOR_FILENAME}
+   )
+   target_include_directories(${LIBRARY_NAME}
+       PRIVATE ${ARDUINO_DIR}/cores/arduino ${ARDUINO_DIR}/variants/standard
+       PUBLIC ${ARDUINO_DIR}/libraries/${LIBRARY_NAME}/src
+   )
+endfunction(add_arduino_library)
 
 include_directories(SYSTEM "${CMAKE_CURRENT_LIST_DIR}")
